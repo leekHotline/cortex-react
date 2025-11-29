@@ -11,7 +11,14 @@ function Counter() {
         <button onClick={ () => setCount(count+1)}>
             点击+1
             </button>   
+        <button onClick={ () => setCount(count+2)}>
+            点击+2
+        </button>
         </div>
+        
+     
+
+
     );
 
 }
