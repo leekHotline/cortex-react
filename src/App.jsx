@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Send, 
@@ -19,6 +19,9 @@ import {
 import { directChat, streamChat, newSession, listSession, deleteSession } from './api/chat'
 import './App.css'
 
+// 预置建议问题，避免在渲染时重复创建数组
+const SUGGESTIONS = ['解释量子计算', '写一首诗', '帮我写代码', '翻译文档']
+
 function App() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -31,28 +34,33 @@ function App() {
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
 
-  // 自动滚动到底部
-  const scrollToBottom = () => {
+  // 自动滚动到底部，使用 useCallback 保证引用稳定
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  useEffect(() => {
-    loadSessions()
   }, [])
 
-  // 加载会话列表
-  const loadSessions = async () => {
+  // 加载会话列表，单独封装，避免在 effect 中重新创建函数
+  const loadSessions = useCallback(async () => {
     try {
       const res = await listSession()
-      setSessions(res.data.data || [])
+      setSessions(res.data?.data || [])
     } catch (error) {
       console.error('加载会话失败:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages, scrollToBottom])
+
+  useEffect(() => {
+    loadSessions()
+  }, [loadSessions])
+
+  // 首次渲染自动聚焦输入框
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
 
   // 发送消息
   const sendMessage = async () => {
@@ -72,8 +80,17 @@ function App() {
           session_id: sessionId 
         })) {
           setMessages(prev => {
+            if (!prev.length) return prev
+
             const newMessages = [...prev]
-            newMessages[newMessages.length - 1].content += chunk
+            const lastIndex = newMessages.length - 1
+            const lastMessage = newMessages[lastIndex] || { role: 'assistant', content: '' }
+
+            newMessages[lastIndex] = {
+              ...lastMessage,
+              content: (lastMessage.content || '') + chunk
+            }
+
             return newMessages
           })
         }
@@ -266,7 +283,7 @@ function App() {
                 <p>有什么我可以帮助你的吗？</p>
                 
                 <div className="suggestions">
-                  {['解释量子计算', '写一首诗', '帮我写代码', '翻译文档'].map((text, i) => (
+                  {SUGGESTIONS.map((text, i) => (
                     <motion.button
                       key={i}
                       className="suggestion"
@@ -341,7 +358,12 @@ function App() {
                 ref={inputRef}
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    sendMessage()
+                  }
+                }}
                 placeholder="输入消息，按 Enter 发送..."
                 disabled={loading}
               />
